@@ -29,15 +29,19 @@
 #' panel with a slightly different set of markers
 #' @param opengwas_jwt Used to authenticate protected endpoints. Login to <https://api.opengwas.io> to obtain a jwt. Provide the jwt string here, or store in .Renviron under the keyname OPENGWAS_JWT.
 #' @param bfile If this is provided then will use the API. Default = `NULL`
-#' @param plink_bin If `NULL` and `bfile` is not `NULL` then will detect 
-#' packaged plink binary for specific OS. Otherwise specify path to plink binary. 
+#' @param plink_bin If `NULL` and `bfile` is not `NULL` then will detect
+#' packaged plink binary for specific OS. Otherwise specify path to plink binary.
 #' Default = `NULL`,
+#' @param threads Number of threads for PLINK to use. Default = `NULL` (PLINK auto-detects).
+#' Set to `1` on shared HPC nodes to prevent resource overuse.
+#' @param memory Amount of memory (MB) for PLINK to use. Default = `NULL` (PLINK auto-detects).
 #' @param ... Additional arguments passed to [`ld_clump_api()`].
 #'
 #' @export
 #' @return Data frame
-ld_clump <- function(dat=NULL, clump_kb=10000, clump_r2=0.001, clump_p=0.99, 
-                     pop = "EUR", opengwas_jwt=get_opengwas_jwt(), bfile=NULL, plink_bin=NULL, ...)
+ld_clump <- function(dat=NULL, clump_kb=10000, clump_r2=0.001, clump_p=0.99,
+                     pop = "EUR", opengwas_jwt=get_opengwas_jwt(), bfile=NULL, plink_bin=NULL,
+                     threads=NULL, memory=NULL, ...)
 {
 
 	stopifnot("rsid" %in% names(dat))
@@ -88,7 +92,7 @@ ld_clump <- function(dat=NULL, clump_kb=10000, clump_r2=0.001, clump_p=0.99,
 			  res[[i]] <- ld_clump_api(x, clump_kb=clump_kb, clump_r2=clump_r2, clump_p=clump_p, pop=pop, opengwas_jwt=opengwas_jwt, ...)
 			} else {
 			  message("Clumping ", ids[i], ", ", nrow(x), " variants, using: ", bfile)
-				res[[i]] <- ld_clump_local(x, clump_kb=clump_kb, clump_r2=clump_r2, clump_p=clump_p, bfile=bfile, plink_bin=plink_bin)
+				res[[i]] <- ld_clump_local(x, clump_kb=clump_kb, clump_r2=clump_r2, clump_p=clump_p, bfile=bfile, plink_bin=plink_bin, threads=threads, memory=memory)
 			}
 		}
 	}
@@ -139,13 +143,17 @@ ld_clump_api <- function(dat, clump_kb=10000, clump_r2=0.1, clump_p, pop="EUR", 
 #' @param clump_r2 Clumping r2 threshold. Default is very strict, `0.001`
 #' @param clump_p Clumping sig level for index variants. Default = `1` (i.e. no threshold)
 #' @param bfile If this is provided then will use the API. Default = `NULL`
-#' @param plink_bin Specify path to plink binary. Default = `NULL`. 
+#' @param plink_bin Specify path to plink binary. Default = `NULL`.
 #' See \url{https://github.com/MRCIEU/genetics.binaRies} for convenient access to plink binaries
+#' @param threads Number of threads for PLINK to use. Default = `NULL` (PLINK auto-detects).
+#' Set to `1` on shared HPC nodes to prevent resource overuse.
+#' @param memory Amount of memory (MB) for PLINK to use. Default = `NULL` (PLINK auto-detects).
 #' @importFrom utils read.table
 #' @importFrom utils write.table
 #' @export
 #' @return data frame of clumped variants
-ld_clump_local <- function(dat, clump_kb, clump_r2, clump_p, bfile, plink_bin)
+ld_clump_local <- function(dat, clump_kb, clump_r2, clump_p, bfile, plink_bin,
+                           threads = NULL, memory = NULL)
 {
 
 	# Make textfile
@@ -156,10 +164,12 @@ ld_clump_local <- function(dat, clump_kb, clump_r2, clump_p, bfile, plink_bin)
 	fun2 <- paste0(
 		shQuote(plink_bin, type=shell),
 		" --bfile ", shQuote(bfile, type=shell),
-		" --clump ", shQuote(fn, type=shell), 
-		" --clump-p1 ", clump_p, 
-		" --clump-r2 ", clump_r2, 
-		" --clump-kb ", clump_kb, 
+		" --clump ", shQuote(fn, type=shell),
+		" --clump-p1 ", clump_p,
+		" --clump-r2 ", clump_r2,
+		" --clump-kb ", clump_kb,
+		if (!is.null(threads)) paste0(" --threads ", threads),
+		if (!is.null(memory)) paste0(" --memory ", memory),
 		" --out ", shQuote(fn, type=shell)
 	)
 	system(fun2)

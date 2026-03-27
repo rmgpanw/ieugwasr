@@ -28,13 +28,16 @@
 #' panel with a slightly different set of markers
 #' @param opengwas_jwt Used to authenticate protected endpoints. Login to <https://api.opengwas.io> to obtain a jwt. Provide the jwt string here, or store in .Renviron under the keyname OPENGWAS_JWT.
 #' @param bfile If this is provided then will use the API. Default = `NULL`
-#' @param plink_bin If `NULL` and bfile is not `NULL` then will detect packaged 
+#' @param plink_bin If `NULL` and bfile is not `NULL` then will detect packaged
 #' plink binary for specific OS. Otherwise specify path to plink binary. Default = `NULL`
+#' @param threads Number of threads for PLINK to use. Default = `NULL` (PLINK auto-detects).
+#' Set to `1` on shared HPC nodes to prevent resource overuse.
+#' @param memory Amount of memory (MB) for PLINK to use. Default = `NULL` (PLINK auto-detects).
 #' @param ... Additional arguments passed to `ld_matrix_api()`.
 #'
 #' @export
 #' @return Matrix of LD r values
-ld_matrix <- function(variants, with_alleles=TRUE, pop="EUR", opengwas_jwt=get_opengwas_jwt(), bfile=NULL, plink_bin=NULL, ...) {
+ld_matrix <- function(variants, with_alleles=TRUE, pop="EUR", opengwas_jwt=get_opengwas_jwt(), bfile=NULL, plink_bin=NULL, threads=NULL, memory=NULL, ...) {
 	if(length(variants) > 500 & is.null(bfile))
 	{
 		stop("SNP list must be smaller than 500. Try running locally by providing local ld reference with bfile argument. See vignettes for a guide on how to do this.")
@@ -54,7 +57,7 @@ ld_matrix <- function(variants, with_alleles=TRUE, pop="EUR", opengwas_jwt=get_o
 
 	if(!is.null(bfile))
 	{
-		return(ld_matrix_local(variants, bfile=bfile, plink_bin=plink_bin, with_alleles=with_alleles))
+		return(ld_matrix_local(variants, bfile=bfile, plink_bin=plink_bin, with_alleles=with_alleles, threads=threads, memory=memory))
 	}
 
 	res <- api_query('ld/matrix', query = list(rsid=variants, pop=pop), opengwas_jwt=opengwas_jwt, ...) %>% get_query_content()
@@ -91,24 +94,33 @@ ld_matrix <- function(variants, with_alleles=TRUE, pop="EUR", opengwas_jwt=get_o
 #' @param bfile Path to bed/bim/fam ld reference panel
 #' @param plink_bin Specify path to plink binary. Default = `NULL`. 
 #' See \url{https://github.com/MRCIEU/genetics.binaRies} for convenient access to plink binaries
-#' @param with_alleles Whether to append the allele names to the SNP names. 
+#' @param with_alleles Whether to append the allele names to the SNP names.
 #' Default: `TRUE`
+#' @param threads Number of threads for PLINK to use. Default = `NULL` (PLINK auto-detects).
+#' Set to `1` on shared HPC nodes to prevent resource overuse.
+#' @param memory Amount of memory (MB) for PLINK to use. Default = `NULL` (PLINK auto-detects).
 #'
 #' @export
 #' @return data frame
-ld_matrix_local <- function(variants, bfile, plink_bin, with_alleles=TRUE) {
+ld_matrix_local <- function(variants, bfile, plink_bin, with_alleles=TRUE,
+                            threads = NULL, memory = NULL) {
 	# Make textfile
 	shell <- ifelse(Sys.info()['sysname'] == "Windows", "cmd", "sh")
 	fn <- tempfile()
 	write.table(data.frame(variants), file=fn, row.names=FALSE, col.names=FALSE, quote=FALSE)
 
-	
+	plink_resources <- paste0(
+		if (!is.null(threads)) paste0(" --threads ", threads),
+		if (!is.null(memory)) paste0(" --memory ", memory)
+	)
+
 	fun1 <- paste0(
 		shQuote(plink_bin, type=shell),
 		" --bfile ", shQuote(bfile, type=shell),
-		" --extract ", shQuote(fn, type=shell), 
-		" --make-just-bim ", 
+		" --extract ", shQuote(fn, type=shell),
+		" --make-just-bim ",
 		" --keep-allele-order ",
+		plink_resources,
 		" --out ", shQuote(fn, type=shell)
 	)
 	system(fun1)
@@ -118,9 +130,10 @@ ld_matrix_local <- function(variants, bfile, plink_bin, with_alleles=TRUE) {
 	fun2 <- paste0(
 		shQuote(plink_bin, type=shell),
 		" --bfile ", shQuote(bfile, type=shell),
-		" --extract ", shQuote(fn, type=shell), 
-		" --r square ", 
+		" --extract ", shQuote(fn, type=shell),
+		" --r square ",
 		" --keep-allele-order ",
+		plink_resources,
 		" --out ", shQuote(fn, type=shell)
 	)
 	system(fun2)
